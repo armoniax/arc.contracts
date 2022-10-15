@@ -1,2 +1,2 @@
 # arc.contracts
-Armonia Request for Comment Standard Contracts
+Armonia Request for Comments Standard Contracts
