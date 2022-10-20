@@ -1,9 +1,9 @@
-#include <verso.ntoken/verso.ntoken.hpp>
+#include <amax.ntoken/amax.ntoken.hpp>
 
 namespace amax {
 
 
-void ntoken::create( const name& issuer, const int64_t& maximum_supply, const nsymbol& symbol, const string& token_uri, const name& ipowner ,const name& token_type)
+void ntoken::create( const name& issuer, const int64_t& maximum_supply, const nsymbol& symbol, const string& token_uri, const name& ipowner )
 {
    require_auth( issuer );
 
@@ -33,7 +33,6 @@ void ntoken::create( const name& issuer, const int64_t& maximum_supply, const ns
       s.ipowner         = ipowner;
       s.issuer          = issuer;
       s.issued_at       = current_time_point();
-      s.token_type      = token_type;
    });
 }
 
@@ -61,6 +60,25 @@ void ntoken::notarize(const name& notary, const uint32_t& token_id) {
     });
 }
 
+void ntoken::approve( const name& owner, const name& spender, const uint32_t& token_pid, const uint64_t& amount ){
+   require_auth( owner );
+
+   allowance_t::idx_t allow( _self, owner.value);
+   auto itr = allow.find( owner.value );
+
+   if( itr == allow.end() ) {
+      allow.emplace( owner, [&](auto& row) {
+          row.spender = spender;
+          row.allowances[ token_pid ] = amount;
+      });
+
+   } else {
+       allow.modify( itr, same_payer, [&](auto& row){
+          row.allowances[ token_pid ] = amount;
+      });
+   }
+}
+
 void ntoken::issue( const name& to, const nasset& quantity, const string& memo )
 {
     auto sym = quantity.symbol;
@@ -81,7 +99,8 @@ void ntoken::issue( const name& to, const nasset& quantity, const string& memo )
     check( quantity.amount <= st.max_supply.amount - st.supply.amount, "quantity exceeds available supply");
 
     nstats.modify( st, same_payer, [&]( auto& s ) {
-       s.supply += quantity;
+      s.supply += quantity;
+      s.issued_at = current_time_point();
     });
 
     add_balance( st.issuer, quantity, st.issuer );
@@ -162,37 +181,16 @@ void ntoken::transferfrom( const name& owner, const name& from, const name& to, 
       check( nft.is_valid(), "invalid nft" );
       check( nft.amount > 0, "must transfer positive nft amount" );
       check( nft.symbol == st.supply.symbol, "NFT symbol mismatch" );
-      check( itr->allowances.count(st.token_type), "Unauthorized NFT:" + st.token_type.to_string() );
-      check( itr->allowances.at(st.token_type) >= nft.amount, "Overdrawn nfts" );
+      check( itr->allowances.count(nft.symbol.parent_id), "Unauthorized NFT PID:" + to_string(nft.symbol.parent_id) );
+      check( itr->allowances.at(nft.symbol.parent_id) >= nft.amount, "Overdrawn nfts" );
 
       allowances.modify( itr,same_payer, [&](auto& row){
-         row.allowances[st.token_type] -= nft.amount;
+         row.allowances[nft.symbol.parent_id] -= nft.amount;
       });
 
       sub_balance( from, nft );
       add_balance( to, nft, payer );
     }
-
-}
-
-void ntoken::approve( const name& owner, const name& spender, const name& token_type, const uint64_t& amount ){
-
-   require_auth( owner );
-
-   allowance_t::idx_t allow( _self, owner.value);
-   
-   auto itr = allow.find( owner.value );
-
-   if ( itr == allow.end()){
-      allow.emplace( owner, [&](auto& row){
-          row.spender = spender;
-          row.allowances[token_type] = amount;
-      });
-   }else {
-       allow.modify( itr,same_payer, [&](auto& row){
-          row.allowances[token_type] = amount;
-      });
-   }
 
 }
 

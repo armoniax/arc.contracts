@@ -19,13 +19,13 @@ using namespace std;
 using namespace eosio;
 
 #define HASH256(str) sha256(const_cast<char*>(str.c_str()), str.size())
-#define TBL struct [[eosio::table, eosio::contract("verso.ntoken")]]
-#define NTBL(name) struct [[eosio::table(name), eosio::contract("verso.ntoken")]]
+#define TBL struct [[eosio::table, eosio::contract("amax.ntoken")]]
+#define NTBL(name) struct [[eosio::table(name), eosio::contract("amax.ntoken")]]
 
 NTBL("global") global_t {
     set<name> notaries;
-    uint64_t  allowance_max_size = 100;
-    EOSLIB_SERIALIZE( global_t, (notaries)(allowance_max_size) )
+
+    EOSLIB_SERIALIZE( global_t, (notaries) )
 };
 typedef eosio::singleton< "global"_n, global_t > global_singleton;
 
@@ -36,6 +36,7 @@ struct nsymbol {
     nsymbol() {}
     nsymbol(const uint32_t& i): id(i),parent_id(0) {}
     nsymbol(const uint32_t& i, const uint32_t& pid): id(i),parent_id(pid) {}
+    nsymbol(const uint64_t& raw): parent_id(raw >> 32), id(raw) {}
 
     friend bool operator==(const nsymbol&, const nsymbol&);
     bool is_valid()const { return( id > parent_id ); }
@@ -83,7 +84,7 @@ TBL nstats_t {
     time_point_sec  issued_at;
     time_point_sec  notarized_at;
     bool            paused;
-    name            token_type;
+
     nstats_t() {};
     nstats_t(const uint64_t& id): supply(id) {};
     nstats_t(const uint64_t& id, const uint64_t& pid): supply(id, pid) {};
@@ -95,7 +96,6 @@ TBL nstats_t {
     uint64_t by_issuer()const       { return issuer.value; }
     uint128_t by_issuer_created()const { return (uint128_t) issuer.value << 64 | (uint128_t) issued_at.sec_since_epoch(); }
     checksum256 by_token_uri()const { return HASH256(token_uri); } // unique index
-    uint64_t by_token_type()const       { return token_type.value; }
 
     typedef eosio::multi_index
     < "tokenstats"_n,  nstats_t,
@@ -103,13 +103,10 @@ TBL nstats_t {
         indexed_by<"ipowneridx"_n,      const_mem_fun<nstats_t, uint64_t, &nstats_t::by_ipowner> >,
         indexed_by<"issueridx"_n,       const_mem_fun<nstats_t, uint64_t, &nstats_t::by_issuer> >,
         indexed_by<"issuercreate"_n,    const_mem_fun<nstats_t, uint128_t, &nstats_t::by_issuer_created> >,
-        indexed_by<"tokenuriidx"_n,     const_mem_fun<nstats_t, checksum256, &nstats_t::by_token_uri> >,
-        indexed_by<"tokentypeidx"_n,    const_mem_fun<nstats_t, uint64_t, &nstats_t::by_token_type> >
+        indexed_by<"tokenuriidx"_n,     const_mem_fun<nstats_t, checksum256, &nstats_t::by_token_uri> >
     > idx_t;
 
-    EOSLIB_SERIALIZE(nstats_t,  (supply)(max_supply)(token_uri)
-                                (ipowner)(notary)(issuer)(issued_at)(notarized_at)(paused)
-                                (token_type) )
+    EOSLIB_SERIALIZE(nstats_t,  (supply)(max_supply)(token_uri)(ipowner)(notary)(issuer)(issued_at)(notarized_at)(paused) )
 };
 
 ///Scope: owner's account
@@ -127,10 +124,11 @@ TBL account_t {
     typedef eosio::multi_index< "accounts"_n, account_t > idx_t;
 };
 
+
 ///Scope: owner's account
 TBL allowance_t{
-    name                   spender;                 // PK
-    map<name, uint64_t>    allowances;              // KV : token_type -> amount
+    name                        spender;                     // PK
+    map<uint32_t, uint64_t>     allowances;                 // KV : NFT PID -> amount
 
     allowance_t() {}
     uint64_t primary_key()const { return spender.value; }
