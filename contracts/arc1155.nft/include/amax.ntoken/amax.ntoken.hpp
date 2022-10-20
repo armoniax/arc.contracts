@@ -93,13 +93,13 @@ class [[eosio::contract("amax.ntoken")]] ntoken : public contract {
    ACTION notarize(const name& notary, const uint32_t& token_id);
    ACTION approve( const name& spender, const name& sender, const uint32_t& token_pid, const uint64_t& amount );
 
-   nasset get_balance(const name& contract, const name& owner, const nsymbol& sym) { 
+   static nasset get_balance(const name& contract, const name& owner, const nsymbol& sym) { 
       auto acnts = amax::account_t::idx_t( contract, owner.value ); 
       const auto& acnt = acnts.get( sym.raw(), "no balance object found" ); 
       return acnt.paused? 0 : acnt.balance; 
    } 
  
-   uint64_t get_balance_by_parent( const name& contract, const name& owner, const uint32_t& parent_id ) { 
+   static uint64_t get_balance_by_parent( const name& contract, const name& owner, const uint32_t& parent_id ) { 
       auto ntable = amax::nstats_t::idx_t( contract, owner.value ); 
       auto idx = ntable.get_index<"parentidx"_n>(); 
       uint64_t id_lowest = (uint64_t)parent_id << 32; 
