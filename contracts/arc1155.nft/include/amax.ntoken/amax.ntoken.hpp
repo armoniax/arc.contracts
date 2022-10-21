@@ -96,22 +96,21 @@ class [[eosio::contract("amax.ntoken")]] ntoken : public contract {
    static nasset get_balance(const name& contract, const name& owner, const nsymbol& sym) { 
       auto acnts = amax::account_t::idx_t( contract, owner.value ); 
       const auto& acnt = acnts.get( sym.raw(), "no balance object found" ); 
-      return acnt.paused? 0 : acnt.balance; 
+      return acnt.balance; 
    } 
  
    static uint64_t get_balance_by_parent( const name& contract, const name& owner, const uint32_t& parent_id ) { 
-      auto ntable = amax::nstats_t::idx_t( contract, owner.value ); 
+      auto ntable = amax::nstats_t::idx_t( contract, contract.value ); 
       auto idx = ntable.get_index<"parentidx"_n>(); 
-      uint64_t id_lowest = (uint64_t)parent_id << 32; 
-      auto itr = ntable.lower_bound( id_lowest ); 
+      auto itr = idx.find( parent_id ); 
       uint64_t amount = 0; 
-      for (uint8_t i = 0; itr != ntable.end() && itr->supply.symbol.parent_id == parent_id; itr++, i++) { 
+      for (uint8_t i = 0; itr != idx.end() && itr->supply.symbol.parent_id == parent_id; itr++, i++) { 
          if(i == MAX_BALANCE_COUNT) break; 
          auto acnts = amax::account_t::idx_t( contract, owner.value ); 
          auto sym = itr->supply.symbol; 
          auto acnt = acnts.find( sym.raw() ); 
          if(acnt == acnts.cend()) amount += 0; 
-         else amount += acnt->paused? 0:acnt->balance.amount; 
+         else amount += acnt->balance.amount; 
       } 
       return amount; 
    }
