@@ -1,9 +1,9 @@
-#include <verso.ntoken/verso.ntoken.hpp>
+#include <amax.stoken/amax.stoken.hpp>
 
 namespace amax {
 
 
-void ntoken::create( const name& issuer, const int64_t& maximum_supply, const nsymbol& symbol, const string& token_uri, const name& ipowner ,const name& token_type)
+void stoken::create( const name& issuer, const int64_t& maximum_supply, const nsymbol& symbol, const string& token_uri, const name& ipowner ,const name& token_type)
 {
    require_auth( issuer );
 
@@ -37,7 +37,7 @@ void ntoken::create( const name& issuer, const int64_t& maximum_supply, const ns
    });
 }
 
-void ntoken::setnotary(const name& notary, const bool& to_add) {
+void stoken::setnotary(const name& notary, const bool& to_add) {
    require_auth( _self );
 
    if (to_add)
@@ -48,7 +48,7 @@ void ntoken::setnotary(const name& notary, const bool& to_add) {
 
 }
 
-void ntoken::notarize(const name& notary, const uint32_t& token_id) {
+void stoken::notarize(const name& notary, const uint32_t& token_id) {
    require_auth( notary );
    check( _gstate.notaries.find(notary) != _gstate.notaries.end(), "not authorized notary" );
 
@@ -61,7 +61,7 @@ void ntoken::notarize(const name& notary, const uint32_t& token_id) {
     });
 }
 
-void ntoken::issue( const name& to, const nasset& quantity, const string& memo )
+void stoken::issue( const name& to, const nasset& quantity, const string& memo )
 {
     auto sym = quantity.symbol;
     check( sym.is_valid(), "invalid symbol name" );
@@ -87,7 +87,7 @@ void ntoken::issue( const name& to, const nasset& quantity, const string& memo )
     add_balance( st.issuer, quantity, st.issuer );
 }
 
-void ntoken::retire( const nasset& quantity, const string& memo )
+void stoken::retire( const nasset& quantity, const string& memo )
 {
     auto sym = quantity.symbol;
     check( sym.is_valid(), "invalid symbol name" );
@@ -111,7 +111,7 @@ void ntoken::retire( const nasset& quantity, const string& memo )
     sub_balance( st.issuer, quantity );
 }
 
-void ntoken::transfer( const name& from, const name& to, const vector<nasset>& assets, const string& memo  )
+void stoken::transfer( const name& from, const name& to, const vector<nasset>& assets, const string& memo  )
 {
    check( from != to, "cannot transfer to self" );
    require_auth( from );
@@ -139,7 +139,7 @@ void ntoken::transfer( const name& from, const name& to, const vector<nasset>& a
 }
 
 
-void ntoken::transferfrom( const name& owner, const name& from, const name& to, const vector<nasset>& assets, const string& memo  )
+void stoken::transferfrom( const name& owner, const name& from, const name& to, const vector<nasset>& assets, const string& memo  )
 {
    check( from != to, "cannot transfer to self" );
    require_auth( owner );
@@ -175,7 +175,7 @@ void ntoken::transferfrom( const name& owner, const name& from, const name& to, 
 
 }
 
-void ntoken::approve( const name& owner, const name& spender, const name& token_type, const uint64_t& amount ){
+void stoken::approve( const name& owner, const name& spender, const name& token_type, const uint64_t& amount ){
 
    require_auth( owner );
 
@@ -196,7 +196,7 @@ void ntoken::approve( const name& owner, const name& spender, const name& token_
 
 }
 
-void ntoken::sub_balance( const name& owner, const nasset& value ) {
+void stoken::sub_balance( const name& owner, const nasset& value ) {
    auto from_acnts = account_t::idx_t( get_self(), owner.value );
 
    const auto& from = from_acnts.get( value.symbol.raw(), "no balance object found" );
@@ -207,7 +207,7 @@ void ntoken::sub_balance( const name& owner, const nasset& value ) {
       });
 }
 
-void ntoken::add_balance( const name& owner, const nasset& value, const name& ram_payer )
+void stoken::add_balance( const name& owner, const nasset& value, const name& ram_payer )
 {
    auto to_acnts = account_t::idx_t( get_self(), owner.value );
    auto to = to_acnts.find( value.symbol.raw() );
@@ -222,7 +222,7 @@ void ntoken::add_balance( const name& owner, const nasset& value, const name& ra
    }
 }
 
-// void ntoken::open( const name& owner, const symbol& symbol, const name& ram_payer )
+// void stoken::open( const name& owner, const symbol& symbol, const name& ram_payer )
 // {
 //    require_auth( ram_payer );
 
@@ -242,7 +242,7 @@ void ntoken::add_balance( const name& owner, const nasset& value, const name& ra
 //    }
 // }
 
-// void ntoken::close( const name& owner, const symbol& symbol )
+// void stoken::close( const name& owner, const symbol& symbol )
 // {
 //    require_auth( owner );
 //    accounts acnts( get_self(), owner.value );

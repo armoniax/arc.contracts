@@ -19,112 +19,162 @@ using namespace std;
 using namespace eosio;
 
 #define HASH256(str) sha256(const_cast<char*>(str.c_str()), str.size())
-#define TBL struct [[eosio::table, eosio::contract("verso.ntoken")]]
-#define NTBL(name) struct [[eosio::table(name), eosio::contract("verso.ntoken")]]
+#define TBL struct [[eosio::table, eosio::contract("amax.stoken")]]
+#define NTBL(name) struct [[eosio::table(name), eosio::contract("amax.stoken")]]
 
 NTBL("global") global_t {
-    set<name> notaries;
-    uint64_t  allowance_max_size = 100;
-    EOSLIB_SERIALIZE( global_t, (notaries)(allowance_max_size) )
-};
-typedef eosio::singleton< "global"_n, global_t > global_singleton;
+    uint64_t                    last_slot_key_id    = 0;
+    uint64_t                    last_slot_id        = 0;
+    uint64_t                    allowance_max_size  = 100;
 
-struct nsymbol {
-    uint32_t id;
-    uint32_t parent_id;
+    typedef eosio::singleton< "global"_n, global_t > global_singleton;
 
-    nsymbol() {}
-    nsymbol(const uint32_t& i): id(i),parent_id(0) {}
-    nsymbol(const uint32_t& i, const uint32_t& pid): id(i),parent_id(pid) {}
-
-    friend bool operator==(const nsymbol&, const nsymbol&);
-    bool is_valid()const { return( id > parent_id ); }
-    uint64_t raw()const { return( (uint64_t) parent_id << 32 | id ); } 
-
-    EOSLIB_SERIALIZE( nsymbol, (id)(parent_id) )
+    EOSLIB_SERIALIZE( global_t, (last_slot_key_id)(last_slot_id)(allowance_max_size) )
 };
 
-bool operator==(const nsymbol& symb1, const nsymbol& symb2) { 
-    return( symb1.id == symb2.id && symb1.parent_id == symb2.parent_id ); 
+//slot_id must be created prior to creation of this ssymbol
+struct ssymbol {
+    uint32_t slot_id;         //LEFT: token slot ID. one token ID can only belong to one slot ID
+    uint32_t token_id;        //RIGHT: token ID
+
+    ssymbol() {}
+    ssymbol(const uint64_t& id): slot_id(id >> 32), token_id( (id << 32) >> 32 ) {}
+    ssymbol(const uint32_t& sid, const uint32_t& tid): slot_id(sid), token_id(tid) {}
+
+    friend bool operator==(const ssymbol&, const ssymbol&);
+    uint64_t raw()const { return( (uint64_t) slot_id << 32 | token_id ); } 
+
+    EOSLIB_SERIALIZE( ssymbol, (slot_id)(token_id) )
+};
+
+bool operator==(const ssymbol& symb1, const ssymbol& symb2) { 
+    return( symb1.slot_id == symb2.slot_id && symb1.token_id == symb2.token_id ); 
 }
 
+namespace slot_perm {
+    static constexpr eosio::name ADMIN         = "admin"_n; // only specified admin accounts can update
+    static constexpr eosio::name OWNER         = "owner"_n; // only owner of the token can update
+    static constexpr eosio::name ALL           = "all"_n;   // everyone can udpate
+};
 
-struct nasset {
+
+// Scope: application (name type)
+TBL slot_key_t {
+    uint64_t                    id;             //slot key ID
+    name                        title;          //key title
+    name                        author_type;    //who can author its value
+    set<name>                   admin_authors;  //a set of admin accounts for author_type that is admin
+
+    slot_key_t() {}
+    slot_key_t(const uint64_t& i): id(i) {}
+
+    uint64_t primary_key()const  { return id; }
+
+    typedef eosio::multi_index
+    < "slotkeys"_n,  slot_key_t,
+    > idx_t;
+
+    EOSLIB_SERIALIZE( slot_key_t, (id)(title)(author_type)(admin_authors) )
+}
+
+/**
+ * @brief   a slot shall be created prior to generation of a new token
+ *          and a new token ID must be created and assigned while the previous one must be emptied
+ *          upon change/update of slot key-value and its generated hash value for one existing token
+ * 
+ */
+// Scope: application (name type)
+TBL slot_t {
+    uint64_t                    id;             // 1:1 associated with slot hash
+    map<uint64_t, string>       properties;     // slot key ID -> value (all original formats will be converted into string)
+                                                // slot key ID must be from slot_key table only and its value can only be updated by
+                                                // authorized user(s) based on the key slot perm
+    string                      meta_uri;       // globally unique uri for token metadata { image, desc,..etc }
+    time_point_sec              created_at;
+
+    slot_t() {}
+    slot_t(const uint64_t& i): id(i) {}
+
+    checksum256 hash() {
+        string content = "";
+        for (auto const& prop : properties) {
+            if (content != "") content += ",";
+            content += prop.first.to_string() + ":" + prop.second;
+        }
+        return HASH256( content );
+    }
+
+    uint64_t primary_key()const  { return id; }
+
+    checksum256 by_slot_hash()const { return slot.hash(); }
+
+    typedef eosio::multi_index
+    < "slots"_n,  slot_t,
+        indexed_by<"slothash"_n,       const_mem_fun<slot_t, checksum256, &slot_t::by_slot_hash> >,
+    > idx_t;
+
+    EOSLIB_SERIALIZE( slot_t, (id)(properties)(meta_uri)(created_at) )
+}
+struct sft_asset {
     int64_t         amount;
-    nsymbol         symbol;
+    ssymbol         symbol;
 
-    nasset() {}
-    nasset(const uint32_t& id): symbol(id), amount(0) {}
-    nasset(const uint32_t& id, const uint32_t& pid): symbol(id, pid), amount(0) {}
-    nasset(const uint32_t& id, const uint32_t& pid, const int64_t& am): symbol(id, pid), amount(am) {}
-    nasset(const int64_t& amt, const nsymbol& symb): amount(amt), symbol(symb) {}
+    sft_asset() {}
+    sft_asset(const uint64_t& id): symbol(id) {}
+    sft_asset(const uint32_t& tid, const uint32_t& sid): symbol(tid, sid), amount(0) {}
+    sft_asset(const uint32_t& tid, const uint32_t& sid, const int64_t& am): symbol(tid, sid), amount(am) {}
+    sft_asset(const int64_t& amt, const ssymbol& s): amount(amt), symbol(s) {}
 
-    nasset& operator+=(const nasset& quantity) { 
-        check( quantity.symbol.raw() == this->symbol.raw(), "nsymbol mismatch");
+    sft_asset& operator+=(const sft_asset& quantity) { 
+        check( quantity.symbol.slot_id == this->symbol.slot_id, "ssymbol slot mismatch");
         this->amount += quantity.amount; return *this;
     } 
-    nasset& operator-=(const nasset& quantity) { 
-        check( quantity.symbol.raw() == this->symbol.raw(), "nsymbol mismatch");
+    sft_asset& operator-=(const sft_asset& quantity) { 
+        check( quantity.symbol.slot_id == this->symbol.slot_id, "ssymbol slot mismatch");
         this->amount -= quantity.amount; return *this; 
     }
 
-    bool is_valid()const { return symbol.is_valid(); }
-    
-    EOSLIB_SERIALIZE( nasset, (amount)(symbol) )
+    EOSLIB_SERIALIZE( sft_asset, (amount)(symbol) )
 };
 
-TBL nstats_t {
-    nasset          supply;
-    nasset          max_supply;     // 1 means NFT-721 type
-    string          token_uri;      // globally unique uri for token metadata { image, desc,..etc }
-    name            ipowner;        // who owns the IP
-    name            notary;         // who notarized the IP authenticity and owership
-    name            issuer;         // who created/uploaded/issued this NFT
-    time_point_sec  issued_at;
-    time_point_sec  notarized_at;
+TBL sft_stats_t {
+    sft_asset       supply;         // PK: symbol.raw()
+    sft_asset       max_supply;     // 1 means NFT-721 type
+    name            creator;         // who created/uploaded/issued this NFT
+    time_point_sec  created_at;
     bool            paused;
-    name            token_type;
-    nstats_t() {};
-    nstats_t(const uint64_t& id): supply(id) {};
-    nstats_t(const uint64_t& id, const uint64_t& pid): supply(id, pid) {};
-    nstats_t(const uint64_t& id, const uint64_t& pid, const int64_t& am): supply(id, pid, am) {};
+
+    sft_stats_t() {};
+    sft_stats_t(const uint64_t& id): supply(id) {};
     
-    uint64_t primary_key()const     { return supply.symbol.id; } // must use id to keep available_primary_key increase consistenly
-    uint64_t by_parent_id()const    { return supply.symbol.parent_id; }
-    uint64_t by_ipowner()const      { return ipowner.value; }
-    uint64_t by_issuer()const       { return issuer.value; }
-    uint128_t by_issuer_created()const { return (uint128_t) issuer.value << 64 | (uint128_t) issued_at.sec_since_epoch(); }
-    checksum256 by_token_uri()const { return HASH256(token_uri); } // unique index
-    uint64_t by_token_type()const       { return token_type.value; }
+    uint64_t primary_key()const     { return supply.symbol.raw(); }
+    uint64_t by_slot_id()const      { return supply.symbol.slot_id; }
 
     typedef eosio::multi_index
-    < "tokenstats"_n,  nstats_t,
-        indexed_by<"parentidx"_n,       const_mem_fun<nstats_t, uint64_t, &nstats_t::by_parent_id> >,
-        indexed_by<"ipowneridx"_n,      const_mem_fun<nstats_t, uint64_t, &nstats_t::by_ipowner> >,
-        indexed_by<"issueridx"_n,       const_mem_fun<nstats_t, uint64_t, &nstats_t::by_issuer> >,
-        indexed_by<"issuercreate"_n,    const_mem_fun<nstats_t, uint128_t, &nstats_t::by_issuer_created> >,
-        indexed_by<"tokenuriidx"_n,     const_mem_fun<nstats_t, checksum256, &nstats_t::by_token_uri> >,
-        indexed_by<"tokentypeidx"_n,    const_mem_fun<nstats_t, uint64_t, &nstats_t::by_token_type> >
+    < "tokenstats"_n,  sft_stats_t,
+        indexed_by<"slotidx"_n,         const_mem_fun<sft_stats_t, uint64_t, &sft_stats_t::by_slot_id> >
     > idx_t;
 
-    EOSLIB_SERIALIZE(nstats_t,  (supply)(max_supply)(token_uri)
-                                (ipowner)(notary)(issuer)(issued_at)(notarized_at)(paused)
-                                (token_type) )
+    EOSLIB_SERIALIZE(sft_stats_t,  (supply)(max_supply)(creator)(created_at)(paused) )
 };
 
 ///Scope: owner's account
 TBL account_t {
-    nasset      balance;
-    bool        paused = false;   //if true, it can no longer be transferred
+    sft_asset                   balance;            //diff tokens w unique IDs could share the same asset slot 
+    bool                        paused = false;     //when true it can no longer be transferred
 
     account_t() {}
-    account_t(const nasset& asset): balance(asset) {}
+    account_t(const sft_asset& asset): balance(asset) {}
 
     uint64_t primary_key()const { return balance.symbol.raw(); }
+    uint64_t by_slot_id()const  { return balance.slot_id; }
 
     EOSLIB_SERIALIZE(account_t, (balance)(paused) )
 
-    typedef eosio::multi_index< "accounts"_n, account_t > idx_t;
+    typedef eosio::multi_index
+    < "accounts"_n, account_t,
+        indexed_by<"slotidx"_n      const_mem_fun<account_t, uint64_t, &account_t::by_slot_id> 
+    > idx_t;
 };
 
 ///Scope: owner's account
@@ -139,5 +189,6 @@ TBL allowance_t{
 
     typedef eosio::multi_index< "allowances"_n, allowance_t > idx_t;
 };
+
 
 } //namespace amax

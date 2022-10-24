@@ -92,7 +92,9 @@ class [[eosio::contract("amax.ntoken")]] ntoken : public contract {
     */
    ACTION notarize(const name& notary, const uint32_t& token_id);
    ACTION approve( const name& spender, const name& sender, const uint32_t& token_pid, const uint64_t& amount );
-
+   ACTION pausetoken(const uint64_t& token_id, const bool paused);
+   ACTION pauseaccount(const name& target, const nsymbol& symbol, const bool paused);
+   
    static nasset get_balance(const name& contract, const name& owner, const nsymbol& sym) { 
       auto acnts = amax::account_t::idx_t( contract, owner.value ); 
       const auto& acnt = acnts.get( sym.raw(), "no balance object found" ); 

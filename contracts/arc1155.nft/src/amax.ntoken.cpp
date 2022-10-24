@@ -250,4 +250,31 @@ void ntoken::add_balance( const name& owner, const nasset& value, const name& ra
 //    acnts.erase( it );
 // }
 
+
+
+void ntoken::pausetoken(const uint64_t& token_id, const bool paused) {
+   require_auth( _gstate.admin );
+
+   auto stats = nstats_t(token_id);
+   CHECKC( _db.get(stats), err::RECORD_NOT_FOUND, "token not found: " + to_string(token_id) )
+   CHECKC( stats.paused != paused, err::PARAM_INCORRECT, "already paused: " + to_string(paused) )
+
+   stats.paused = paused;
+   _db.set( stats );
+
+}
+
+void ntoken::pauseaccount(const name& target, const nsymbol& symbol, const bool paused) {
+   require_auth( _gstate.admin );
+
+   auto tokenasset = nasset(0, symbol);
+   auto account = account_t(tokenasset);
+   CHECKC( _db.get(target.value, account), err::RECORD_NOT_FOUND, "account balance not found: " + target.to_string() )
+   CHECKC( account.paused != paused, err::PARAM_INCORRECT, "already paused: " + to_string(paused) )
+      
+   account.paused = paused;
+   _db.set( target.value, account );
+
+}
+
 } //namespace amax

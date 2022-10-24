@@ -1,16 +1,3 @@
-<h1 class="contract">close</h1>
-
----
-spec_version: "0.2.0"
-title: Close Token Balance
-summary: 'Close {{nowrap owner}}’s zero quantity balance'
-icon: @ICON_BASE_URL@/@TOKEN_ICON_URI@
----
-
-{{owner}} agrees to close their zero quantity balance for the {{symbol_to_symbol_code symbol}} token.
-
-RAM will be refunded to the RAM payer of the {{symbol_to_symbol_code symbol}} token balance for {{owner}}.
-
 <h1 class="contract">create</h1>
 
 ---
@@ -93,3 +80,16 @@ icon: @ICON_BASE_URL@/@TRANSFER_ICON_URI@
 If {{from}} is not already the RAM payer of their {{asset_to_symbol_code quantity}} token balance, {{from}} will be designated as such. As a result, RAM will be deducted from {{from}}’s resources to refund the original RAM payer.
 
 If {{to}} does not have a balance for {{asset_to_symbol_code quantity}}, {{from}} will be designated as the RAM payer of the {{asset_to_symbol_code quantity}} token balance for {{to}}. As a result, RAM will be deducted from {{from}}’s resources to create the necessary records.
+
+<h1 class="contract">close</h1>
+
+---
+spec_version: "0.1.0"
+title: Close Token Balance
+summary: 'Close {{nowrap owner}}’s zero quantity balance'
+icon: @ICON_BASE_URL@/@TOKEN_ICON_URI@
+---
+
+{{owner}} agrees to close their zero quantity balance for the {{symbol_to_symbol_code symbol}} token.
+
+RAM will be refunded to the RAM payer of the {{symbol_to_symbol_code symbol}} token balance for {{owner}}.
