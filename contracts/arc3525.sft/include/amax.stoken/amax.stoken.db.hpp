@@ -111,8 +111,8 @@ TBL slot_t {
 
     typedef eosio::multi_index
     < "slots"_n,  slot_t,
-        indexed_by<"slotowner"_n,      const_mem_fun<slot_t, uint64_t, &slot_t::by_slot_owner> >,
-        indexed_by<"slothash"_n,       const_mem_fun<slot_t, checksum256, &slot_t::by_slot_hash> >
+        indexed_by<"slotowner"_n, const_mem_fun<slot_t, uint64_t, &slot_t::by_slot_owner> >,
+        indexed_by<"slothash"_n, const_mem_fun<slot_t, checksum256, &slot_t::by_slot_hash> >
     > idx_t;
 
     EOSLIB_SERIALIZE( slot_t, (id)(owner)(properties)(meta_uri)(created_at) )
@@ -172,8 +172,8 @@ TBL sft_stats_t {
 
     typedef eosio::multi_index
     < "sftstats"_n,  sft_stats_t,
-        indexed_by<"slotid"_n,         const_mem_fun<sft_stats_t, uint64_t, &sft_stats_t::by_slot_id> >,
-        indexed_by<"slothash"_n,       const_mem_fun<sft_stats_t, checksum256, &sft_stats_t::by_slot_hash> >
+        indexed_by<"slotid"_n, const_mem_fun<sft_stats_t, uint64_t, &sft_stats_t::by_slot_id> >,
+        indexed_by<"slothash"_n, const_mem_fun<sft_stats_t, checksum256, &sft_stats_t::by_slot_hash> >
     > idx_t;
 
     EOSLIB_SERIALIZE(sft_stats_t,  (supply)(max_supply)(creator)(created_at)(paused) )
@@ -195,8 +195,8 @@ TBL account_t {
 
     typedef eosio::multi_index
     < "accounts"_n, account_t,
-        indexed_by<"slotid"_n,      const_mem_fun<account_t, uint64_t, &account_t::by_slot_id> >,
-        indexed_by<"slothash"_n,    const_mem_fun<account_t, checksum256, &account_t::by_slot_hash> > 
+        indexed_by<"slotid"_n, const_mem_fun<account_t, uint64_t, &account_t::by_slot_id> >,
+        indexed_by<"slothash"_n, const_mem_fun<account_t, checksum256, &account_t::by_slot_hash> > 
     > idx_t;
 };
 
