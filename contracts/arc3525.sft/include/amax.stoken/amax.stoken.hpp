@@ -73,11 +73,11 @@ class [[eosio::contract("amax.stoken")]] stoken : public contract {
     *
     * @param from is account who sends the asset.
     * @param to is account of receiver.
-    * @param assetids is array of assetid's to transfer.
+    * @param quantity is SFT asset
     * @param memo is transfers comment.
     * @return no return value.
     */
-   ACTION transfer( const name& from, const name& to, const vector<sasset>& assets, const string& memo );
+   ACTION transfer( const name& from, const name& to, const sasset& quantity, const string& memo );
    using transfer_action = action_wrapper< "transfer"_n, &stoken::transfer >;
 
    private:

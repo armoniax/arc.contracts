@@ -134,7 +134,7 @@ void stoken::retire( const sasset& quantity, const string& memo )
    sub_balance( st.creator, quantity );
 }
 
-void stoken::transfer( const name& from, const name& to, const vector<sasset>& assets, const string& memo  )
+void stoken::transfer( const name& from, const name& to, const sasset& quantity, const string& memo  )
 {
    check( from != to, "cannot transfer to self" );
    require_auth( from );
@@ -145,14 +145,12 @@ void stoken::transfer( const name& from, const name& to, const vector<sasset>& a
    require_recipient( from );
    require_recipient( to );
 
-   for( auto& quantity : assets ) {
-      auto stats = sft_stats_t::idx_t( _self, _self.value );
-      const auto& st = stats.get( quantity.id );
-      check( quantity.amount > 0, "must transfer positive quantity" );
+   auto stats = sft_stats_t::idx_t( _self, _self.value );
+   const auto& st = stats.get( quantity.id );
+   check( quantity.amount > 0, "must transfer positive quantity" );
 
-      sub_balance( from, quantity );
-      add_balance( to, quantity, payer );
-    }
+   sub_balance( from, quantity );
+   add_balance( to, quantity, payer );
 }
 
 void stoken::sub_balance( const name& owner, const sasset& value ) {
@@ -162,8 +160,8 @@ void stoken::sub_balance( const name& owner, const sasset& value ) {
    check( from.balance.amount >= value.amount, "overdrawn balance" );
 
    from_acnts.modify( from, owner, [&]( auto& a ) {
-         a.balance -= value;
-      });
+      a.balance -= value;
+   });
 }
 
 void stoken::add_balance( const name& owner, const sasset& value, const name& ram_payer )
