@@ -143,12 +143,12 @@ void stoken::retire( const sasset& quantity, const string& memo )
    sub_balance( st.creator, quantity );
 }
 
-void stoken::transfer( const name& from, const name& to, const sasset& quantity, const string& memo  )
+void stoken::transfer( const name& from, const name& to, const sasset& quantity, const string& memo )
 {
-   check( from != to, "cannot transfer to self" );
+   // CHECKC( from != to, err::TRANSFER_SELF, "cannot transfer to self" )
    require_auth( from );
-   check( is_account( to ), "to account does not exist");
-   check( memo.size() <= max_memo_size, "memo has more than 256 bytes" );
+   CHECKC( is_account( to ), err::INVALID_ACCOUNT, "to account does not exist" )
+   CHECKC( memo.size() <= max_memo_size, err::OVERSIZED, "memo has more than 256 bytes" )
    auto payer = has_auth( to ) ? to : from;
 
    require_recipient( from );
@@ -156,7 +156,7 @@ void stoken::transfer( const name& from, const name& to, const sasset& quantity,
 
    auto stats = sft_stats_t::idx_t( _self, _self.value );
    const auto& st = stats.get( quantity.id );
-   check( quantity.amount > 0, "must transfer positive quantity" );
+   CHECKC( quantity.amount > 0, err::NOT_POSITIVE, "must transfer positive quantity" )
 
    sub_balance( from, quantity );
    add_balance( to, quantity, payer );
@@ -173,24 +173,58 @@ void stoken::sub_balance( const name& owner, const sasset& value ) {
    });
 }
 
+/**
+ * @brief - all cases:
+ *       1. slot has NO owner
+ *          1.1 to has no common slot
+ *          1.2 to has a common slot
+ * 
+ *       2. slot has an owner
+ *          2.1 to has no common slot
+ *          2.2 to has a common slot 
+ */
 void stoken::add_balance( const name& owner, const sasset& value, const name& ram_payer )
 {
-   auto to_acnts = account_t::idx_t( get_self(), owner.value );
-   
-   auto slot = slot_t( value.slot.id );
-   _db.get( slot );
+   auto slot               = slot_t( value.slot.id );
+   CHECKC( _db.get( slot ), err::RECORD_NOT_FOUND, "slot not found" )
 
-   // value.slot
-   auto to = to_acnts.find( value.id );
+   auto slothash           = slot_hash_t( value.slot.hid );
+   CHECKC( _db.get( slothash ), err::RECORD_NOT_FOUND, "slot hash not found" )
 
-   if( to == to_acnts.end() ) {
+   auto to_acnts           = account_t::idx_t( get_self(), owner.value );
+
+   if (slot.owner.value == 0) { // ""_n
+      auto hid_idx = to_acnts.get_index<"slothid"_n>();
+      auto hid_itr = hid_idx.find( slothash.id );
+      if (hid_itr != hid_idx.end()) {
+         to_acnts.modify( *hid_itr, same_payer, [&]( auto& a ) {
+            a.balance += value;
+         });
+      } else {
+         to_acnts.emplace( ram_payer, [&]( auto& a ){
+            a.balance = value;
+         });
+      }
+
+   } else { //slot has an owner
+      //must generate a new slot
+      auto to_slot         = slot_t( ++ _gstate.last_slot_id );
+      to_slot.owner        = owner;
+      to_slot.properties   = slot.properties;
+      to_slot.meta_uri     = slot.meta_uri;
+      to_slot.created_at   = current_time_point();
+      _db.set( to_slot );
+
+      auto to_slothash     = slot_hash_t( to_slot.id );
+      to_slothash.hash     = to_slot.hash();
+      _db.set( to_slothash );
+
+      //must generate a new asset
+      auto slotids         = slot_s(to_slot.id, to_slothash.id);
+      auto to_value        = sasset( ++ _gstate.last_asset_id, slotids, value.amount );
+      
       to_acnts.emplace( ram_payer, [&]( auto& a ){
-        a.balance = value;
-      });
-
-   } else {
-      to_acnts.modify( to, same_payer, [&]( auto& a ) {
-        a.balance += value;
+        a.balance = to_value;
       });
    }
 }

@@ -36,7 +36,8 @@ static constexpr uint64_t max_memo_size     = 256;
 enum class err: uint8_t {
     NONE                = 0,
     RECORD_NOT_FOUND    = 1,
-    RECORD_FOUND     = 2,
+    RECORD_FOUND        = 2,
+    INVALID_ACCOUNT     = 3,
     SYMBOL_MISMATCH     = 4,
     PARAM_INCORRECT     = 5,
     PAUSED              = 6,
@@ -44,6 +45,7 @@ enum class err: uint8_t {
     NOT_POSITIVE        = 8,
     NOT_STARTED         = 9,
     OVERSIZED           = 10,
+    TRANSFER_SELF       = 11,
 
 };
 
@@ -206,14 +208,12 @@ TBL account_t {
     account_t(const sasset& asset): balance(asset) {}
 
     uint64_t primary_key()const     { return balance.id; }
-    uint64_t by_slot_id()const      { return balance.slot.id; }
-    uint64_t by_slot_hid()const { return balance.slot.hid; }
+    uint64_t by_slot_hid()const     { return balance.slot.hid; }
 
     EOSLIB_SERIALIZE( account_t, (balance)(paused) )
 
     typedef eosio::multi_index
     < "accounts"_n, account_t,
-        indexed_by<"slotid"_n, const_mem_fun<account_t, uint64_t, &account_t::by_slot_id> >,
         indexed_by<"slothid"_n, const_mem_fun<account_t, uint64_t, &account_t::by_slot_hid> > 
     > idx_t;
 };
