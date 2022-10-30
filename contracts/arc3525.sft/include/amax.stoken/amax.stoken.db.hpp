@@ -65,7 +65,7 @@ namespace slot_perm {
 };
 
 
-// Scope: application (name type)
+// Scope: default
 TBL slot_key_t {
     name                        title;          //key title
     name                        perm_type       = slot_perm::NONE;      //who can author its value
@@ -81,7 +81,7 @@ TBL slot_key_t {
     EOSLIB_SERIALIZE( slot_key_t, (title)(perm_type)(admins) )
 };
 
-// Scope: application (name type)
+// Scope: default
 TBL slot_t {
     uint64_t                    id;             // PK 1:1 associated with slot hash
 
@@ -118,18 +118,36 @@ TBL slot_t {
     EOSLIB_SERIALIZE( slot_t, (id)(owner)(properties)(meta_uri)(created_at) )
 };
 
+TBL slot_hash_t {
+    uint64_t                    id;             // PK 1:1 associated with slot hash, hid
+    checksum256                 hash;
+
+    slot_hash_t() {}
+    slot_hash_t( const uint64_t& i): id(i) {}
+
+    uint64_t primary_key()const  { return id; }
+    checksum256 by_slot_hash()const { return hash; } //unique index
+
+    typedef eosio::multi_index
+    < "slothash"_n,  slot_hash_t,
+        indexed_by<"slothash"_n, const_mem_fun<slot_hash_t, checksum256, &slot_hash_t::by_slot_hash> >
+    > idx_t;
+
+    EOSLIB_SERIALIZE( slot_hash_t, (id)(hash) )
+};
+
 struct slot_s {
-    uint64_t                    id;
-    checksum256                 hash; 
+    uint64_t                    id;     //slot id
+    uint64_t                    hid;    //slot hash id
 
     slot_s() {}
-    slot_s(const uint64_t& i, const checksum256& h): id(i),hash(h) {}
+    slot_s(const uint64_t& i, const uint64_t& h): id(i),hid(h) {}
     
     friend bool operator==(const slot_s& s1, const slot_s& s2) { 
-        return( s1.id == s2.id || s1.hash == s2.hash ); 
+        return( s1.id == s2.id || s1.hid == s2.hid ); 
     }
 
-    EOSLIB_SERIALIZE( slot_s, (id)(hash) )
+    EOSLIB_SERIALIZE( slot_s, (id)(hid) )
 };
 // bool operator==(const slot_s& s1, const slot_s& s2) { 
 //     return( s1.id == s2.id || s1.hash == s2.hash ); 
@@ -145,11 +163,11 @@ struct sasset {
     sasset(const uint64_t& i, const slot_s& s, const int64_t& amt): id(i), slot(s), amount(amt) {}
 
     sasset& operator+=(const sasset& quantity) { 
-        check( quantity.slot == this->slot, "slot mismatches");
+        check( quantity.slot == this->slot, "slotids mismatches");
         this->amount += quantity.amount; return *this;
     } 
     sasset& operator-=(const sasset& quantity) { 
-        check( quantity.slot == this->slot, "slot mismatches");
+        check( quantity.slot == this->slot, "slotids mismatches");
         this->amount -= quantity.amount; return *this; 
     }
 
@@ -168,12 +186,12 @@ TBL sft_stats_t {
     
     uint64_t primary_key()const     { return supply.id; }
     uint64_t by_slot_id()const      { return supply.slot.id; }
-    checksum256 by_slot_hash()const { return supply.slot.hash; }
+    uint64_t by_slot_hid()const     { return supply.slot.hid; }
 
     typedef eosio::multi_index
     < "sftstats"_n,  sft_stats_t,
         indexed_by<"slotid"_n, const_mem_fun<sft_stats_t, uint64_t, &sft_stats_t::by_slot_id> >,
-        indexed_by<"slothash"_n, const_mem_fun<sft_stats_t, checksum256, &sft_stats_t::by_slot_hash> >
+        indexed_by<"slothid"_n, const_mem_fun<sft_stats_t, uint64_t, &sft_stats_t::by_slot_hid> >
     > idx_t;
 
     EOSLIB_SERIALIZE(sft_stats_t,  (supply)(max_supply)(creator)(created_at)(paused) )
@@ -189,14 +207,14 @@ TBL account_t {
 
     uint64_t primary_key()const     { return balance.id; }
     uint64_t by_slot_id()const      { return balance.slot.id; }
-    checksum256 by_slot_hash()const { return balance.slot.hash; }
+    uint64_t by_slot_hid()const { return balance.slot.hid; }
 
     EOSLIB_SERIALIZE( account_t, (balance)(paused) )
 
     typedef eosio::multi_index
     < "accounts"_n, account_t,
         indexed_by<"slotid"_n, const_mem_fun<account_t, uint64_t, &account_t::by_slot_id> >,
-        indexed_by<"slothash"_n, const_mem_fun<account_t, checksum256, &account_t::by_slot_hash> > 
+        indexed_by<"slothid"_n, const_mem_fun<account_t, uint64_t, &account_t::by_slot_hid> > 
     > idx_t;
 };
 

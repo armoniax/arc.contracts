@@ -37,9 +37,9 @@ class [[eosio::contract("amax.stoken")]] stoken : public contract {
 
     ~stoken() { _global.set( _gstate, get_self() ); }
 
-   ACTION addslotkey( const name& app, const name& title, const name& auth_type, const set<name>& admins );
-   ACTION addslot( const name& app, const name& owner, const string& meta_uri, const map<name, string>& props );
-   ACTION setslotprop( const name& signer, const name& app, const uint64_t& slot_id, const name& prop_key, const string& prop_value );
+   ACTION addslotkey( const name& title, const name& auth_type, const set<name>& admins );
+   ACTION addslot( const name& owner, const string& meta_uri, const map<name, string>& props );
+   ACTION setslotprop( const name& signer, const uint64_t& slot_id, const name& prop_key, const string& prop_value );
    /**
     * @brief Allows `signer` account to create a SFT asset in supply of `maximum_supply`. If validation is successful a new entry in stats
     *
@@ -50,7 +50,7 @@ class [[eosio::contract("amax.stoken")]] stoken : public contract {
     * @param maximum_supply - the maximum supply set for the token created
     * @return ACTION
     */
-   ACTION create( const name& signer, const name& app_name, const uint64_t& asset_id, const uint64_t& slot_id, const int64_t& maximum_supply );
+   ACTION create( const name& signer, const uint64_t& asset_id, const uint64_t& slot_id, const int64_t& maximum_supply );
 
    /**
     * @brief This action issues to `to` account a `quantity` of tokens.

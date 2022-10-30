@@ -3,24 +3,24 @@
 
 namespace amax {
 
-void stoken::addslotkey( const name& app, const name& title, const name& perm_type, const set<name>& admins ) {
+void stoken::addslotkey( const name& title, const name& perm_type, const set<name>& admins ) {
    require_auth( _gstate.admin );
 
    auto slotkey = slot_key_t( title );
-   CHECKC( !_db.get( app.value, slotkey ), err::RECORD_FOUND, "slot key already defined" )
+   CHECKC( !_db.get( slotkey ), err::RECORD_FOUND, "slot key already defined" )
 
    slotkey.perm_type = perm_type;
    slotkey.admins    = admins;
 
-   _db.set( app.value, slotkey );
+   _db.set( slotkey );
 
 }
 
-void stoken::addslot( const name& app, const name& owner, const string& meta_uri, const map<name, string>& props ) {
+void stoken::addslot( const name& owner, const string& meta_uri, const map<name, string>& props ) {
    require_auth( _gstate.admin );
 
    auto slot = slot_t( ++ _gstate.last_slot_id );
-   CHECKC( !_db.get( app.value, slot ), err::RECORD_FOUND, "slot already defined" )
+   CHECKC( !_db.get( slot ), err::RECORD_FOUND, "slot already defined" )
    CHECKC( meta_uri.size() <= max_uri_size, err::OVERSIZED, "meta uri length > 1024" )
    CHECKC( props.size() <= max_prop_size, err::OVERSIZED, "props size > 64" )
 
@@ -29,24 +29,27 @@ void stoken::addslot( const name& app, const name& owner, const string& meta_uri
    slot.meta_uri     = meta_uri;
    slot.created_at   = current_time_point();
 
-   auto slots = slot_t::idx_t(_self, app.value);
-   auto idx = slots.get_index<"slothash"_n>();
-   auto itr = idx.find( slot.hash() );
+   auto slots        = slot_t::idx_t(_self, _self.value);
+   auto idx          = slots.get_index<"slothash"_n>();
+   auto itr          = idx.find( slot.hash() );
    CHECKC( itr == idx.end(), err::RECORD_FOUND, "slot with the same hash found" )
+   _db.set( slot );
 
-   _db.set( app.value, slot );
+   auto slothash     = slot_hash_t( slot.id );
+   slothash.hash     = slot.hash();
+   _db.set( slothash );
 
 }
 
-void stoken::setslotprop( const name& signer, const name& app, const uint64_t& slot_id, const name& prop_key, const string& prop_value ) {
+void stoken::setslotprop( const name& signer, const uint64_t& slot_id, const name& prop_key, const string& prop_value ) {
    require_auth( signer );
 
    auto slot = slot_t( slot_id );
-   CHECKC( _db.get( app.value, slot ), err::RECORD_NOT_FOUND, "slot not defined" )
+   CHECKC( _db.get( slot ), err::RECORD_NOT_FOUND, "slot not defined" )
    CHECKC( slot.properties.count( prop_key ), err::RECORD_NOT_FOUND, "prop key not found: " + prop_key.to_string() )
 
    auto slotkey = slot_key_t( prop_key );
-   CHECKC( _db.get( app.value, slotkey ), err::RECORD_NOT_FOUND, "slot key not defined" )
+   CHECKC( _db.get( slotkey ), err::RECORD_NOT_FOUND, "slot key not defined" )
 
    switch( slotkey.perm_type.value ) {
       case slot_perm::ADMIN.value: {
@@ -61,33 +64,39 @@ void stoken::setslotprop( const name& signer, const name& app, const uint64_t& s
    }
 
    slot.properties[ prop_key ] = prop_value;
-   _db.set( app.value, slot );
+   _db.set( slot );
 
 }
 
-void stoken::create( const name& signer, const name& app_name, const uint64_t& asset_id, const uint64_t& slot_id, const int64_t& maximum_supply )
+void stoken::create( const name& signer, const uint64_t& asset_id, const uint64_t& slot_id, const int64_t& maximum_supply )
 {
    require_auth( signer );
 
    check( is_account(signer), "signer account does not exist" );
    check( maximum_supply > 0, "max-supply must be positive" );
 
-   auto slotidx         = slot_t::idx_t( _self, app_name.value );
-   auto slotitr         = slotidx.find( slot_id );
-   check( slotitr != slotidx.end(), "slot not found: " + to_string(slot_id) );
-   auto slot            = slot_s( slot_id, slotitr->hash() );
-   auto stats           = sft_stats_t::idx_t( _self, _self.value );
+   auto slot            = slot_t( slot_id );
+   CHECKC( _db.get( slot ), err::RECORD_NOT_FOUND, "slot not found: " + to_string(slot_id) )
+
+   auto slothashes      = slot_hash_t::idx_t(_self, _self.value );
+   auto slothashidx     = slothashes.get_index<"slothash"_n>();
+   auto slothashitr     = slothashidx.find( slot.hash() );
+   CHECKC( slothashitr != slothashidx.end(), err::RECORD_NOT_FOUND, "slot hash not found" )
+
    auto id              = asset_id;
+   auto slotids         = slot_s( slot_id, slothashitr->id );
+   auto stats           = sft_stats_t::idx_t( _self, _self.value );
+   auto statitr         = stats.find( asset_id );
 
    if (id > 0)
-      check( stats.find( asset_id ) == stats.end(), "sasset with the same ID already exists: " + to_string(asset_id) );
+      CHECKC( statitr == stats.end(), err::RECORD_FOUND, "sasset with the same ID already exists: " + to_string(asset_id) )
    else
       id                = ++ _gstate.last_asset_id/*stats.available_primary_key() */;
 
    int64_t zero_supply  = 0;
    stats.emplace( signer, [&]( auto& s ) {
-      s.supply          = sasset( id, slot, zero_supply );
-      s.max_supply      = sasset( id, slot, maximum_supply );
+      s.supply          = sasset( id, slotids, zero_supply );
+      s.max_supply      = sasset( id, slotids, maximum_supply );
       s.creator         = signer;
       s.created_at      = current_time_point();
    });
@@ -167,7 +176,13 @@ void stoken::sub_balance( const name& owner, const sasset& value ) {
 void stoken::add_balance( const name& owner, const sasset& value, const name& ram_payer )
 {
    auto to_acnts = account_t::idx_t( get_self(), owner.value );
+   
+   auto slot = slot_t( value.slot.id );
+   _db.get( slot );
+
+   // value.slot
    auto to = to_acnts.find( value.id );
+
    if( to == to_acnts.end() ) {
       to_acnts.emplace( ram_payer, [&]( auto& a ){
         a.balance = value;
