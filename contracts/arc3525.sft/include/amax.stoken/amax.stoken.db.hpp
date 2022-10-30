@@ -201,17 +201,17 @@ TBL account_t {
 };
 
 ///Scope: owner's account
-TBL allowance_t{
-    name                        spender;                 // PK
-    map<name, uint64_t>         allowances;              // KV : token_type -> amount
+// TBL allowance_t{
+//     name                        spender;                 // PK
+//     map<name, uint64_t>         allowances;              // KV : token_type -> amount
 
-    allowance_t() {}
-    uint64_t primary_key()const { return spender.value; }
+//     allowance_t() {}
+//     uint64_t primary_key()const { return spender.value; }
 
-    EOSLIB_SERIALIZE(allowance_t, (spender)(allowances) )
+//     EOSLIB_SERIALIZE(allowance_t, (spender)(allowances) )
 
-    typedef eosio::multi_index< "allowances"_n, allowance_t > idx_t;
-};
+//     typedef eosio::multi_index< "allowances"_n, allowance_t > idx_t;
+// };
 
 
 } //namespace amax
