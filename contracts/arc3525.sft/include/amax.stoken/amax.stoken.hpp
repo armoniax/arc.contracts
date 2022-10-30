@@ -7,6 +7,7 @@
 #include <string>
 
 #include <amax.stoken/amax.stoken.db.hpp>
+#include "wasm.db.hpp"
 
 namespace amax {
 
@@ -14,7 +15,7 @@ using std::string;
 using std::vector;
 
 using namespace eosio;
-
+using namespace wasm::db;
 /**
  * The `amax.stoken` sample system contract defines the structures and actions that allow users to create, issue, and manage tokens for AMAX based blockchains. It demonstrates one way to implement a smart contract which allows for creation and management of tokens. It is possible for one to create a similar contract which suits different needs. However, it is recommended that if one only needs a token with the below listed actions, that one uses the `amax.stoken` contract instead of developing their own.
  *
@@ -29,21 +30,27 @@ class [[eosio::contract("amax.stoken")]] stoken : public contract {
       using contract::contract;
 
    stoken(eosio::name receiver, eosio::name code, datastream<const char*> ds): contract(receiver, code, ds),
-        _global(get_self(), get_self().value)
+        _global(get_self(), get_self().value), _db(get_self())
     {
         _gstate = _global.exists() ? _global.get() : global_t{};
     }
 
     ~stoken() { _global.set( _gstate, get_self() ); }
 
+   ACTION addslotkey( const name& app, const name& title, const name& auth_type, const set<name>& admins );
+   ACTION addslot( const name& app, const name& owner, const string& meta_uri, const map<name, string>& props );
+   ACTION setslotprop( const name& signer, const name& app, const uint64_t& slot_id, const name& prop_key, const string& prop_value );
    /**
-    * @brief Allows `issuer` account to create a token in supply of `maximum_supply`. If validation is successful a new entry in statsta
+    * @brief Allows `signer` account to create a SFT asset in supply of `maximum_supply`. If validation is successful a new entry in stats
     *
-    * @param issuer  - the account that creates the token
+    * @param signer  - the account that creates the SFT asset
+    * @param app_name - the app name under which the SFT assets to be created
+    * @param asset_id - the asset ID. if 0 it will be using the default available primary ID
+    * @param slot_id - the slot ID for the asset
     * @param maximum_supply - the maximum supply set for the token created
     * @return ACTION
     */
-   ACTION create( const name& issuer, const int64_t& maximum_supply, const nsymbol& symbol, const string& token_uri, const name& ipowner ,const name& token_type);
+   ACTION create( const name& signer, const name& app_name, const uint64_t& asset_id, const uint64_t& slot_id, const int64_t& maximum_supply );
 
    /**
     * @brief This action issues to `to` account a `quantity` of tokens.
@@ -52,9 +59,11 @@ class [[eosio::contract("amax.stoken")]] stoken : public contract {
     * @param quntity - the amount of tokens to be issued,
     * @memo - the memo string that accompanies the token issue transaction.
     */
-   ACTION issue( const name& to, const nasset& quantity, const string& memo );
+   ACTION issue( const name& to, const sasset& quantity, const string& memo );
 
-   ACTION retire( const nasset& quantity, const string& memo );
+   ACTION retire( const sasset& quantity, const string& memo );
+
+   
 	/**
 	 * @brief Transfers one or more assets.
 	 *
@@ -68,35 +77,16 @@ class [[eosio::contract("amax.stoken")]] stoken : public contract {
     * @param memo is transfers comment.
     * @return no return value.
     */
-   ACTION transfer( const name& from, const name& to, const vector<nasset>& assets, const string& memo );
-
-   ACTION transferfrom( const name& sender, const name& from, const name& to, const vector<nasset>& assets, const string& memo  );
+   ACTION transfer( const name& from, const name& to, const vector<sasset>& assets, const string& memo );
    using transfer_action = action_wrapper< "transfer"_n, &stoken::transfer >;
 
-   /**
-    * @brief fragment a NFT into multiple common or unique NFT pieces
-    *
-    * @return ACTION
-    */
-   // ACTION fragment();
-
-   ACTION setnotary(const name& notary, const bool& to_add);
-   /**
-    * @brief notary to notarize a NFT asset by its token ID
-    *
-    * @param notary
-    * @param token_id
-    * @return ACTION
-    */
-   ACTION notarize(const name& notary, const uint32_t& token_id);
-   
-   ACTION approve( const name& spender, const name& sender, const name& token_type, const uint64_t& amount );
    private:
-      void add_balance( const name& owner, const nasset& value, const name& ram_payer );
-      void sub_balance( const name& owner, const nasset& value );
+      void add_balance( const name& owner, const sasset& value, const name& ram_payer );
+      void sub_balance( const name& owner, const sasset& value );
 
    private:
-      global_singleton    _global;
-      global_t            _gstate;
+      global_t::singleton        _global;
+      global_t                   _gstate;
+      dbc                        _db;
 };
 } //namespace amax
