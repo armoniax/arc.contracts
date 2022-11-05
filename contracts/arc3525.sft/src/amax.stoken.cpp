@@ -91,12 +91,11 @@ void stoken::create( const name& signer, const uint64_t& asset_id, const uint64_
    if (id > 0)
       CHECKC( statitr == stats.end(), err::RECORD_FOUND, "sasset with the same ID already exists: " + to_string(asset_id) )
    else
-      id                = ++ _gstate.last_asset_id/*stats.available_primary_key() */;
+      id                = ++ _gstate.last_sft_id/*stats.available_primary_key() */;
 
    int64_t zero_supply  = 0;
    stats.emplace( signer, [&]( auto& s ) {
       s.supply          = sasset( id, slotids, zero_supply );
-      s.max_supply      = sasset( id, slotids, maximum_supply );
       s.creator         = signer;
       s.created_at      = current_time_point();
    });
@@ -115,7 +114,6 @@ void stoken::issue( const name& to, const sasset& quantity, const string& memo )
    check( to == st.creator, "SFT assets can only be issued to creator account" );
    check( quantity.amount > 0, "must issue positive quantity" );
    check( quantity.id == st.supply.id, "asset ID mismatch" );
-   check( quantity.amount <= st.max_supply.amount - st.supply.amount, "quantity exceeds available supply");
 
    stats.modify( st, same_payer, [&]( auto& s ) {
       s.supply += quantity;
@@ -143,23 +141,88 @@ void stoken::retire( const sasset& quantity, const string& memo )
    sub_balance( st.creator, quantity );
 }
 
+/**
+ * @brief - all cases:
+ *       1. slot has NO owner
+ *          1.1 to has no common slot
+ *             1.1.1 full transfer - move nft ID 
+ *             1.1.2 partial transfer - generate a new NFT ID
+ *          1.2 to has a common slot
+ *             1.2.1 full transfer - 
+ *             1.2.2 partial transfer
+ * 
+ *       2. slot has an owner
+ *          - create a new slot & SFT asset
+ *          - move the new slot asset into receivers account
+ */
 void stoken::transfer( const name& from, const name& to, const sasset& quantity, const string& memo )
 {
    // CHECKC( from != to, err::TRANSFER_SELF, "cannot transfer to self" )
    require_auth( from );
    CHECKC( is_account( to ), err::INVALID_ACCOUNT, "to account does not exist" )
    CHECKC( memo.size() <= max_memo_size, err::OVERSIZED, "memo has more than 256 bytes" )
-   auto payer = has_auth( to ) ? to : from;
+   auto payer           = has_auth( to ) ? to : from;
 
    require_recipient( from );
    require_recipient( to );
 
-   auto stats = sft_stats_t::idx_t( _self, _self.value );
-   const auto& st = stats.get( quantity.id );
+   auto now             = current_time_point();
+   auto stats           = sft_stats_t::idx_t( _self, _self.value );
+   const auto& st       = stats.get( quantity.id );
    CHECKC( quantity.amount > 0, err::NOT_POSITIVE, "must transfer positive quantity" )
 
+   auto from_acnt       = account_t( quantity.id );
+   CHECKC( _db.get( from.value, from_acnt ), err::RECORD_NOT_FOUND, "from sasset not found: " + to_string( quantity.id ) )
+   CHECKC( from_acnt.balance >= quantity, err::OVERDRAWN, "overdrawn quantity: " + quantity.to_string() )
+   
+   from_acnt.balance       -= quantity;
+   _db.set( from_acnt ); 
+
+   auto slot               = slot_t( quantity.slot.id );
+   CHECKC( _db.get( slot ), err::RECORD_NOT_FOUND, "slot not found" )
+
+   slot_t new_slot         = slot;
+   sasset new_sft          = quantity;
+   if (slot.owner != name(0)) { //must create a new slot & new SFT
+      create_new_slot( to, new_slot );
+      create_new_sft( new_slot, from, new_sft );
+      
+   } else { //no slot owner, hence no need to create a new slot
+      if (from_acnt.balance > quantity) { //partial transfer
+         create_new_sft( new_slot, from, new_sft );
+      }
+   }
+
    sub_balance( from, quantity );
-   add_balance( to, quantity, payer );
+   add_balance( to, new_sft, same_payer );
+
+}
+
+inline void stoken::create_new_slot(const name& new_owner, slot_t& new_slot) {
+   new_slot.id          = ++_gstate.last_slot_id;
+   new_slot.owner       = new_owner;
+   new_slot.created_at  = current_time_point();
+
+   _db.set( new_slot );
+}
+
+inline void stoken::create_new_sft( const slot_t& new_slot, const name& creator, sasset& new_sft ) {
+   auto slothashes      = slot_hash_t::idx_t( _self, _self.value );
+   auto slothashidx     = slothashes.get_index<"slothash"_n>();
+   if (slothashidx.find( new_slot.hash() ) == slothashidx.end()) {
+      slothashes.emplace( creator, [&]( auto& row ){
+         row.id         = ++_gstate.last_slot_hid;
+         row.hash       = new_slot.hash();
+      });
+   }
+
+   new_sft.id           = ++_gstate.last_sft_id; //hid remains the same
+   new_sft.slot         = slot_s( new_slot.id, _gstate.last_slot_hid );
+   auto stat            = sft_stats_t( new_sft );
+   stat.creator         = creator;
+   stat.created_at      = current_time_point();
+
+   _db.set( stat );
 }
 
 void stoken::sub_balance( const name& owner, const sasset& value ) {
@@ -173,58 +236,18 @@ void stoken::sub_balance( const name& owner, const sasset& value ) {
    });
 }
 
-/**
- * @brief - all cases:
- *       1. slot has NO owner
- *          1.1 to has no common slot
- *          1.2 to has a common slot
- * 
- *       2. slot has an owner
- *          2.1 to has no common slot
- *          2.2 to has a common slot 
- */
 void stoken::add_balance( const name& owner, const sasset& value, const name& ram_payer )
 {
-   auto slot               = slot_t( value.slot.id );
-   CHECKC( _db.get( slot ), err::RECORD_NOT_FOUND, "slot not found" )
-
-   auto slothash           = slot_hash_t( value.slot.hid );
-   CHECKC( _db.get( slothash ), err::RECORD_NOT_FOUND, "slot hash not found" )
-
    auto to_acnts           = account_t::idx_t( get_self(), owner.value );
+   auto to                 = to_acnts.find( value.id );
 
-   if (slot.owner.value == 0) { // ""_n
-      auto hid_idx = to_acnts.get_index<"slothid"_n>();
-      auto hid_itr = hid_idx.find( slothash.id );
-      if (hid_itr != hid_idx.end()) {
-         to_acnts.modify( *hid_itr, same_payer, [&]( auto& a ) {
-            a.balance += value;
-         });
-      } else {
-         to_acnts.emplace( ram_payer, [&]( auto& a ){
-            a.balance = value;
-         });
-      }
-
-   } else { //slot has an owner
-      //must generate a new slot
-      auto to_slot         = slot_t( ++ _gstate.last_slot_id );
-      to_slot.owner        = owner;
-      to_slot.properties   = slot.properties;
-      to_slot.meta_uri     = slot.meta_uri;
-      to_slot.created_at   = current_time_point();
-      _db.set( to_slot );
-
-      auto to_slothash     = slot_hash_t( to_slot.id );
-      to_slothash.hash     = to_slot.hash();
-      _db.set( to_slothash );
-
-      //must generate a new asset
-      auto slotids         = slot_s(to_slot.id, to_slothash.id);
-      auto to_value        = sasset( ++ _gstate.last_asset_id, slotids, value.amount );
-      
+   if( to == to_acnts.end() ) {
       to_acnts.emplace( ram_payer, [&]( auto& a ){
-        a.balance = to_value;
+         a.balance         = value;
+      });
+   } else {
+      to_acnts.modify( to, same_payer, [&]( auto& a ) {
+        a.balance          += value;
       });
    }
 }

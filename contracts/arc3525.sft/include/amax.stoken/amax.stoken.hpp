@@ -84,6 +84,9 @@ class [[eosio::contract("amax.stoken")]] stoken : public contract {
       void add_balance( const name& owner, const sasset& value, const name& ram_payer );
       void sub_balance( const name& owner, const sasset& value );
 
+      void create_new_slot(const name& new_owner, slot_t& new_slot);
+      void create_new_sft( const slot_t& new_slot, const name& creator, sasset& new_sft );
+
    private:
       global_t::singleton        _global;
       global_t                   _gstate;

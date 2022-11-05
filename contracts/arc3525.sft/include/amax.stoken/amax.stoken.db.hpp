@@ -45,7 +45,8 @@ enum class err: uint8_t {
     NOT_POSITIVE        = 8,
     NOT_STARTED         = 9,
     OVERSIZED           = 10,
-    TRANSFER_SELF       = 11,
+    OVERDRAWN           = 11,
+    TRANSFER_SELF       = 12,
 
 };
 
@@ -53,11 +54,13 @@ enum class err: uint8_t {
 NTBL("global") global_t {
     name                        admin               = "armoniaadmin"_n;
     uint64_t                    last_slot_id        = 0;
-    uint64_t                    last_asset_id       = 0;
+    uint64_t                    last_slot_hid       = 0;
+    uint64_t                    last_sft_id         = 0;
+   
 
     typedef eosio::singleton< "global"_n, global_t > singleton;
 
-    EOSLIB_SERIALIZE( global_t, (admin)(last_slot_id)(last_asset_id) )
+    EOSLIB_SERIALIZE( global_t, (admin)(last_slot_id)(last_slot_hid)(last_sft_id) )
 };
 
 namespace slot_perm {
@@ -87,7 +90,7 @@ TBL slot_key_t {
 TBL slot_t {
     uint64_t                    id;             // PK 1:1 associated with slot hash
 
-    name                        owner = ""_n;   // owner account, if null it can be shared by multiple accounts
+    name                        owner = name(0);   // owner account, if null it can be shared by multiple accounts
     map<name, string>           properties;     // slot key title -> value (all original formats will be converted into string)
                                                 // slot key must be from slot_key table only and its value can only be updated by
                                                 // authorized user(s) based on the key slot perm
@@ -98,7 +101,7 @@ TBL slot_t {
     slot_t(const uint64_t& i): id(i) {}
 
     checksum256 hash()const {
-        string content = owner.to_string();
+        string content = "";    //owner shall not be included here
         for (auto const& prop : properties) {
             content += prop.first.to_string() + ":" + prop.second;
         }
@@ -120,6 +123,7 @@ TBL slot_t {
     EOSLIB_SERIALIZE( slot_t, (id)(owner)(properties)(meta_uri)(created_at) )
 };
 
+//Scope: default
 TBL slot_hash_t {
     uint64_t                    id;             // PK 1:1 associated with slot hash, hid
     checksum256                 hash;
@@ -145,6 +149,8 @@ struct slot_s {
     slot_s() {}
     slot_s(const uint64_t& i, const uint64_t& h): id(i),hid(h) {}
     
+    string to_string()const { return std::to_string(id) + ":" + std::to_string(hid); }
+
     friend bool operator==(const slot_s& s1, const slot_s& s2) { 
         return( s1.id == s2.id || s1.hid == s2.hid ); 
     }
@@ -156,53 +162,56 @@ struct slot_s {
 // }
 
 struct sasset {
-    uint64_t                    id;   //unique for each SFT asset instance
-    slot_s                      slot;
+    uint64_t                    id;   //SFT token ID
     int64_t                     amount;
+    slot_s                      slot;
 
     sasset() {}
     sasset(const uint64_t& i): id(i) {}
     sasset(const uint64_t& i, const slot_s& s, const int64_t& amt): id(i), slot(s), amount(amt) {}
 
-    sasset& operator+=(const sasset& quantity) { 
+    string to_string()const { return std::to_string(id) + ":" + std::to_string(amount) + ", slot:" + slot.to_string(); }
+    sasset& operator+=(const sasset& quantity) {
         check( quantity.slot == this->slot, "slotids mismatches");
         this->amount += quantity.amount; return *this;
-    } 
+    }
     sasset& operator-=(const sasset& quantity) { 
         check( quantity.slot == this->slot, "slotids mismatches");
         this->amount -= quantity.amount; return *this; 
     }
 
-    EOSLIB_SERIALIZE( sasset, (id)(slot)(amount) )
+    bool operator>=(const sasset& sft) { 
+        return( this->amount >= sft.amount );
+    }
+    bool operator>(const sasset& sft) { 
+        return( this->amount > sft.amount );
+    }
+
+    EOSLIB_SERIALIZE( sasset, (id)(amount)(slot) )
 };
 
 TBL sft_stats_t {
-    sasset                      supply;         // PK: asset ID
-    sasset                      max_supply;     // 1 means NFT-721 type
-    name                        creator;        // who created/uploaded/issued this NFT
+    sasset                      supply;     //PK: supply.id
+    name                        creator;
     time_point_sec              created_at;
-    bool                        paused = false;
 
-    sft_stats_t() {};
-    sft_stats_t(const uint64_t& id): supply(id) {};
-    
-    uint64_t primary_key()const     { return supply.id; }
-    uint64_t by_slot_id()const      { return supply.slot.id; }
-    uint64_t by_slot_hid()const     { return supply.slot.hid; }
+    sft_stats_t() {}
+    sft_stats_t(const sasset& s): supply(s) {}
+
+    uint64_t primary_key()const { return supply.id; }
+    uint64_t by_slot_hid()const { return supply.slot.hid; }
 
     typedef eosio::multi_index
-    < "sftstats"_n,  sft_stats_t,
-        indexed_by<"slotid"_n, const_mem_fun<sft_stats_t, uint64_t, &sft_stats_t::by_slot_id> >,
+    < "sftstats"_n, sft_stats_t,
         indexed_by<"slothid"_n, const_mem_fun<sft_stats_t, uint64_t, &sft_stats_t::by_slot_hid> >
     > idx_t;
 
-    EOSLIB_SERIALIZE(sft_stats_t,  (supply)(max_supply)(creator)(created_at)(paused) )
+    EOSLIB_SERIALIZE( sft_stats_t, (supply)(creator)(created_at) )
 };
 
 ///Scope: owner's account
 TBL account_t {
     sasset                      balance;            //diff tokens w unique IDs could share the same asset slot 
-    bool                        paused = false;     //when true it can no longer be transferred
 
     account_t() {}
     account_t(const sasset& asset): balance(asset) {}
@@ -210,7 +219,7 @@ TBL account_t {
     uint64_t primary_key()const     { return balance.id; }
     uint64_t by_slot_hid()const     { return balance.slot.hid; }
 
-    EOSLIB_SERIALIZE( account_t, (balance)(paused) )
+    EOSLIB_SERIALIZE( account_t, (balance) )
 
     typedef eosio::multi_index
     < "accounts"_n, account_t,
