@@ -104,7 +104,7 @@ void stoken::create( const name& signer, const uint64_t& asset_id, const uint64_
 void stoken::issue( const name& to, const sasset& quantity, const string& memo )
 {
    require_auth( to );
-   check( memo.size() <= 256, "memo has more than 256 bytes" );
+   check( memo.size()   <= 256, "memo has more than 256 bytes" );
 
    auto asset_id        = quantity.id;
    auto stats           = sft_stats_t::idx_t( _self, _self.value );
@@ -160,7 +160,7 @@ void stoken::transfer( const name& from, const name& to, const sasset& quantity,
    // CHECKC( from != to, err::TRANSFER_SELF, "cannot transfer to self" )
    require_auth( from );
    CHECKC( is_account( to ), err::INVALID_ACCOUNT, "to account does not exist" )
-   CHECKC( memo.size() <= max_memo_size, err::OVERSIZED, "memo has more than 256 bytes" )
+   CHECKC( memo.size()  <= max_memo_size, err::OVERSIZED, "memo has more than 256 bytes" )
    auto payer           = has_auth( to ) ? to : from;
 
    require_recipient( from );
@@ -175,14 +175,14 @@ void stoken::transfer( const name& from, const name& to, const sasset& quantity,
    CHECKC( _db.get( from.value, from_acnt ), err::RECORD_NOT_FOUND, "from sasset not found: " + to_string( quantity.id ) )
    CHECKC( from_acnt.balance >= quantity, err::OVERDRAWN, "overdrawn quantity: " + quantity.to_string() )
    
-   from_acnt.balance       -= quantity;
+   from_acnt.balance    -= quantity;
    _db.set( from_acnt ); 
 
-   auto slot               = slot_t( quantity.slot.id );
+   auto slot            = slot_t( quantity.slot.id );
    CHECKC( _db.get( slot ), err::RECORD_NOT_FOUND, "slot not found" )
 
-   slot_t new_slot         = slot;
-   sasset new_sft          = quantity;
+   slot_t new_slot      = slot;
+   sasset new_sft       = quantity;
    if (slot.owner != name(0)) { //must create a new slot & new SFT
       create_new_slot( to, new_slot );
       create_new_sft( new_slot, from, new_sft );
@@ -226,28 +226,27 @@ inline void stoken::create_new_sft( const slot_t& new_slot, const name& creator,
 }
 
 void stoken::sub_balance( const name& owner, const sasset& value ) {
-   auto from_acnts = account_t::idx_t( get_self(), owner.value );
-
-   const auto& from = from_acnts.get( value.id, "no balance object found" );
-   check( from.balance.amount >= value.amount, "overdrawn balance" );
+   auto from_acnts      = account_t::idx_t( get_self(), owner.value );
+   const auto& from     = from_acnts.get( value.id, "no balance object found" );
+   CHECKC( from.balance >= value, err::OVERDRAWN, "overdrawn balance" )
 
    from_acnts.modify( from, owner, [&]( auto& a ) {
-      a.balance -= value;
+      a.balance         -= value;
    });
 }
 
 void stoken::add_balance( const name& owner, const sasset& value, const name& ram_payer )
 {
-   auto to_acnts           = account_t::idx_t( get_self(), owner.value );
-   auto to                 = to_acnts.find( value.id );
+   auto to_acnts        = account_t::idx_t( get_self(), owner.value );
+   auto to              = to_acnts.find( value.id );
 
    if( to == to_acnts.end() ) {
       to_acnts.emplace( ram_payer, [&]( auto& a ){
-         a.balance         = value;
+         a.balance      = value;
       });
    } else {
       to_acnts.modify( to, same_payer, [&]( auto& a ) {
-        a.balance          += value;
+        a.balance       += value;
       });
    }
 }
