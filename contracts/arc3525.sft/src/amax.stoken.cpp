@@ -154,17 +154,28 @@ void stoken::retire( const sasset& quantity, const string& memo )
  *       2. slot has an owner
  *          - create a new slot & SFT asset
  *          - move the new slot asset into receivers account
+ * 
+ *  @memo - format: merge:$sft_id
  */
 void stoken::transfer( const name& from, const name& to, const sasset& quantity, const string& memo )
 {
-   // CHECKC( from != to, err::TRANSFER_SELF, "cannot transfer to self" )
    require_auth( from );
+
+   CHECKC( from != to, err::TRANSFER_SELF, "cannot transfer to self" )
    CHECKC( is_account( to ), err::INVALID_ACCOUNT, "to account does not exist" )
    CHECKC( memo.size()  <= max_memo_size, err::OVERSIZED, "memo has more than 256 bytes" )
    auto payer           = has_auth( to ) ? to : from;
 
    require_recipient( from );
    require_recipient( to );
+
+   uint64_t to_merge_sft_id = 0;
+   if (memo != "") {
+      vector<string_view> memo_params = split(memo, ":");
+      if (memo_params.size() == 2 && memo_params[0] == "merge") {
+         to_merge_sft_id = to_uint64( memo_params[1], "to merge SFT ID" );
+      }
+   }
 
    auto now             = current_time_point();
    auto stats           = sft_stats_t::idx_t( _self, _self.value );
@@ -173,27 +184,26 @@ void stoken::transfer( const name& from, const name& to, const sasset& quantity,
 
    auto from_acnt       = account_t( quantity.id );
    CHECKC( _db.get( from.value, from_acnt ), err::RECORD_NOT_FOUND, "from sasset not found: " + to_string( quantity.id ) )
-   CHECKC( from_acnt.balance >= quantity, err::OVERDRAWN, "overdrawn quantity: " + quantity.to_string() )
    
-   from_acnt.balance    -= quantity;
-   _db.set( from_acnt ); 
-
    auto slot            = slot_t( quantity.slot.id );
    CHECKC( _db.get( slot ), err::RECORD_NOT_FOUND, "slot not found" )
 
-   slot_t new_slot      = slot;
+   
    sasset new_sft       = quantity;
    if (slot.owner != name(0)) { //must create a new slot & new SFT
+      auto new_slot     = slot;
       create_new_slot( to, new_slot );
-      create_new_sft( new_slot, from, new_sft );
+      create_new_sft( from, new_slot, new_sft );
       
    } else { //no slot owner, hence no need to create a new slot
       if (from_acnt.balance > quantity) { //partial transfer
-         create_new_sft( new_slot, from, new_sft );
+         create_new_sft( from, slot, new_sft );
       }
    }
 
    sub_balance( from, quantity );
+
+   /// must check if SFT can be merged
    add_balance( to, new_sft, same_payer );
 
 }
@@ -206,7 +216,7 @@ inline void stoken::create_new_slot(const name& new_owner, slot_t& new_slot) {
    _db.set( new_slot );
 }
 
-inline void stoken::create_new_sft( const slot_t& new_slot, const name& creator, sasset& new_sft ) {
+inline void stoken::create_new_sft( const name& creator, const slot_t& new_slot, sasset& new_sft ) {
    auto slothashes      = slot_hash_t::idx_t( _self, _self.value );
    auto slothashidx     = slothashes.get_index<"slothash"_n>();
    if (slothashidx.find( new_slot.hash() ) == slothashidx.end()) {
@@ -240,12 +250,23 @@ void stoken::add_balance( const name& owner, const sasset& value, const name& ra
    auto to_acnts        = account_t::idx_t( get_self(), owner.value );
    auto to              = to_acnts.find( value.id );
 
-   if( to == to_acnts.end() ) {
+   if( to != to_acnts.end() ) {
+      to_acnts.modify( to, same_payer, [&]( auto& a ) {
+        a.balance       += value;
+      });
+
+      return;
+   }
+
+   auto slothids        = to_acnts.get_index<"slothid"_n>();
+   auto acct_itr        = slothids.find( value.slot.hid );
+   if( acct_itr == slothids.end() ) {
       to_acnts.emplace( ram_payer, [&]( auto& a ){
          a.balance      = value;
       });
-   } else {
-      to_acnts.modify( to, same_payer, [&]( auto& a ) {
+
+   } else { //found a common slot, hence merging with it
+      to_acnts.modify( *acct_itr, same_payer, [&]( auto& a ) {
         a.balance       += value;
       });
    }

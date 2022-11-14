@@ -180,10 +180,10 @@ struct sasset {
         this->amount -= quantity.amount; return *this; 
     }
 
-    bool operator>=(const sasset& sft) { 
+    bool operator>=(const sasset& sft)const { 
         return( this->amount >= sft.amount );
     }
-    bool operator>(const sasset& sft) { 
+    bool operator>(const sasset& sft)const { 
         return( this->amount > sft.amount );
     }
 
